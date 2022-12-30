@@ -1,0 +1,223 @@
+---
+title: "Statistical Inference with the GSS Data Using R"
+output:
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+  pdf_document: default
+---
+### Author: Arash Sadeghzadeh
+### Date: 30-Dec-2022
+
+### Introduction
+Since 1972, the General Social Survey (GSS) has been monitoring societal change and studying the growing complexity of American society. The GSS aims to gather data on contemporary American society in order to monitor and explain trends and constants in attitudes, behaviors, and attributes. In this project, we consider a few research questions to answer based on these data. We perform inference that addresses the research questions using R.
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(tidyr)
+library(ggmosaic)
+```
+
+### Load data
+
+```{r load-data}
+load("gss.Rdata")
+```
+Lets have a look at the summary of the data frame:
+
+```{r column names}
+str(gss)
+```
+The numbers of the data in the data frame are as follows:
+```{r num_data}
+nrow(gss)
+
+```
+## Research questions
+
+### Is there any difference between the average income of women and men?
+Note that the total family income and the sex have been reported in columns "coninc" and "sex", respectively.  Let us first compute the average income for men and women:
+```{r men_average}
+gss %>% group_by(sex) %>% summarize(Average.Income = round(mean(coninc, na.rm=TRUE)))
+```
+Lets have a look at the related boxplot of men and women income:
+
+```{r }
+ggplot(data=gss, aes(x=sex, y=coninc)) + geom_boxplot() + ylab("Income") + 
+ggtitle("Men and Women Income")
+```
+
+Now, lets compute the confidence interval for these averages. We first compute the 95% confidence interval for the average of the men income:
+```{r }
+gss_men <- gss %>% filter(sex=="Male") 
+
+gss_men %>% summarize(Number.of.Samples.Men = n())
+inference(y=coninc, data=gss_men, type="ci", statistic="mean", conf_level=0.95,
+          method="theoretical")
+```
+
+Now, let us compute the related 95% confidence interval for the average income 
+for women as follows:
+
+```{r }
+gss_women <- gss %>% filter(sex=="Female") 
+
+gss_women %>% summarize(Number.of.Samples.Women = n())
+inference(y=coninc, data=gss_women, type="ci", statistic="mean", conf_level=0.95,
+          method="theoretical")
+```
+
+Now, let us evaluate whether these data support the hypothesis that men on average receive more salary than women?
+
+So, we have the following hypotheses: 
+
+$H_0$ (Null hypothesis): Men and women on average receive the same salary.\
+$H_A$ (Alternative hypothesis): Men receive more salary than women on average. 
+
+```{r }
+df_withoutNA <- gss %>% drop_na(coninc)
+inference(data=df_withoutNA, y=coninc, x=sex, type="ht", statistic="mean", 
+          method="theoretical", alternative="greater", sig_level=0.95)
+```
+
+Since p-value is small (less than 0.05), the data provide convincing evidence that men on average receive more salary than women.
+
+Now, just for the further evaluation, we compute the difference between the average salaries of 1000 random samples of men and 1000 random samples of women. To obtain the distribution of this difference, we consider the salary difference computation for 5000 different set of samples of men and women as follows:
+
+```{r cache=TRUE}
+set.seed(1979)
+sample_salary_men <- gss %>%  filter(sex=="Male") %>%
+    rep_sample_n(size=1000, reps=5000, replace=TRUE) %>%
+    summarize(mean.salary = mean(coninc, na.rm=TRUE))
+
+sample_salary_women <- gss %>% filter(sex=="Female") %>%
+    rep_sample_n(size=1000, reps=5000, replace=TRUE) %>%
+    summarize(mean.salary = mean(coninc, na.rm=TRUE))
+
+
+diff_salary <- sample_salary_men - sample_salary_women
+ggplot(data=diff_salary, aes(x=mean.salary)) + geom_histogram(binwidth=300)
+
+```
+
+Not surprisingly, the salary difference has a nearly normal distribution. 
+
+Now, we compute the 95% confidence interval for the difference between the 
+average salary for men and women as follows:
+
+```{r }
+df_withoutNA <- gss %>% drop_na(coninc)
+inference(data=df_withoutNA, y=coninc, x=sex, type="ci", statistic="mean", 
+          method="theoretical", sig_level=0.95)
+```
+
+Therefore, we are 95% confident that the average salary for men is about 7117 up to 8369 more than the avarage salary for women.  
+
+### Estimate how men and women at large compare with respect to being self-employed?
+
+Note that "wrkslf" column contains the data regarding being self-employed or employed by someone else. In what follows, we illustrate the related barplots:
+
+```{r }
+c4 = c("A", "B", "c")
+ggplot(data=gss, aes(x=sex, color=wrkslf, fill=wrkslf)) + geom_bar() + 
+    ylab("Numeber of people") + 
+    ggtitle("Work status (self-employed or for someone else) for men and women")
+```
+
+Lets compute the proportionals of being self-employed for men and women as 
+follows:
+
+```{r }
+gss %>% drop_na(wrkslf) %>% 
+    mutate(self.employed=ifelse(wrkslf=="Self-Employed", 1, 0)) %>%
+    group_by(sex) %>% 
+    summarize(prop.self.employed = sum(self.employed)/n(), 
+              num.self.employed = sum(self.employed),
+              total.num = n())
+
+```
+
+Now, we evaluate the related 95% confidence interval for the difference of being 
+self-employed between men and women:  
+
+```{r }
+inference(data=gss, y=wrkslf, x=sex, statistic="proportion", 
+          success="Self-Employed", method="theoretical", type="ci", 
+          sig_level=0.95)
+```
+
+This implies that we are 95% confident that between 6 to 7 percent  men are more self-employed than women. 
+
+## Are there differences between the average salaries of people having different marital status?
+
+Note that the marital status of the respondents are reported in "marital" column 
+of the data frame. First, we illustrate the boxplots of the income with respect 
+to the marital status. 
+
+```{r }
+ggplot(data=gss, aes(x=marital, y=coninc)) + geom_boxplot() + ylab("Income")
+```
+
+Therefore, we have the problem of comparing independent means, which can be
+addressed using ANOVA. For this example we have considered the significance-level 
+$\alpha=0.01$. 
+
+```{r }
+gss <- gss %>% drop_na(coninc)
+
+inference(data=gss, y=coninc, x=marital, statistic="mean", method="theoretical", 
+          type="ht", alternative="greater", conf_level=0.99 )
+```
+
+The obtained value for p-value is  small (less than 0.01),; therefore, one can 
+conclude that at least one pair of means are different. 
+
+The pairwise test can reveal the means of which pair are different or not 
+different. Testing many pairs of group is called  multiple comparisons. The "Benferroni correction" suggests that a more stringent significance level is more appropriate for these tests. Actually, $\alpha$ should be adjusted by the number of comparisons being considered:
+
+\begin{equation}
+(\mbox{Benerroni correction) }\alpha^\star = \frac{\alpha}{K}, \\ \quad K: number of comparisons, \quad k: \mbox{number of means}, \quad K=\frac{k(k-1)}{2}
+\end{equation}
+
+This implies that for this example, we have to adjust the significance level to the new significance level as $\alpha^\star = \frac{0.01}{10}=0.001, K=\frac{5 \times 4}{2} = 10$. 
+
+Now, the pairwise comparison shows that for all pairs the means are different but the p-value between "never married" and "divorced" is greater that the p-value=0.001; thus one can conclude that for all pairs the means are different unless for the pair "never married" and "divorced" based on the considered significance-level. 
+
+
+## Are attitudes toward sex education and subjective social class independent?
+
+Note that attitude toward sex education is reported in "sexeduc" column, and the subjective social class is given in "class" column. 
+
+```{r }
+table(gss$sexeduc, gss$class)
+```
+
+We illustrated the related data in a mosaic plot as follows:
+
+```{r }
+# Change the order of sexeduc factors for a btter representation
+gss_modified <- gss %>% mutate(sexeduc=factor(sexeduc, levels=c("Oppose", "Favor", "Depends")))
+ggplot(data=gss_modified) + 
+    geom_mosaic(aes(x=product(sexeduc), fill=class), na.rm=TRUE)  +
+    theme_mosaic()
+```
+
+This problem can be addressed by using chi-square independence test. We have two 
+categorical variables one of which has more that two levels. One can resort to 
+"inference" to tackle this problem as follows:
+
+```{r }
+gss <- gss %>% drop_na(abany)
+
+inference(data=gss, y=class, x=sexeduc, statistic="proportion", method="theoretical", 
+          type="ht", alternative="greater", success="Yes")
+```
+
+Since the obtained value for p-value is smaller that 0.05, therefore one can 
+conclude that the attitude toward sex education and the subjective social class 
+are not independent. 
